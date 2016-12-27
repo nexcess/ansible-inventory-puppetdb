@@ -1,0 +1,24 @@
+## example configuration for the inventory
+## copy this file as 'config.yml' and replace the values with your own
+
+hostname: example.host ## (str) the hostname of the PuppetDB server to use
+
+port: 8080 ## (int) the port PuppetDB is listening on
+
+ssl: false ## (bool) whether to use SSL/TLS for the connection (https)
+
+cacert: /path/to/ca/cert   ## (str) path to the ca certificate
+
+cert: /path/to/server/cert ## (str) path to the servers certificate
+
+key: /path/to/server/key   ## (str) path to the servers certificate key
+
+use_redis: false ## (bool) whether to use redis for caching
+
+redis_host: '127.0.0.1' ## (str) the host to use when connecting to redis
+
+redis_port: 6379 ## (int) the port to use when connecting to redis
+
+redis_index: 0 ## (int) the redis index to use for storage
+
+redis_ttl: 86400 ## (int) the time in seconds to consider cached data valid
