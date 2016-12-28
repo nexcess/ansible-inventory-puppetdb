@@ -111,7 +111,7 @@ OptionParser.new do |opts|
 end.parse!
 
 ## handle switches
-if options[:list]
+if options[:list] || options.empty?
   if CONFIG['use_redis']
     REDIS.set(RKEY, build_rsp, ex: CONFIG['redis_ttl']) unless REDIS.get(RKEY)
     puts REDIS.get(RKEY)
