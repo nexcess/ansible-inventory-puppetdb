@@ -67,8 +67,10 @@ def get_node_info(nodes)
   nodes.each do |node|
     facts = []
     get_facts(node).each { |x| facts.push(x) }
-    meta[facts[0]['value']] = { 'ansible_host' => facts[1]['value'] }
-    hosts.push(facts[0]['value'])
+    if !facts.to_a.empty?
+      meta[facts[0]['value']] = { 'ansible_host' => facts[1]['value'] }
+      hosts.push(facts[0]['value'])
+    end
     ## 'hack' to get around doing proper threading/batching
     ## curl gives errors w/out
     sleep(0.1)
