@@ -16,11 +16,13 @@ PROTO = CONFIG['ssl'] ? 'https://' : 'http://'
 PDBHOST = "#{PROTO}#{CONFIG['hostname']}:#{CONFIG['port']}".freeze
 
 ## load redis and create connector if used
-require 'redis' if CONFIG['use_redis']
-REDIS = Redis.new(host: CONFIG['redis_host'],
-                  port: CONFIG['redis_port'],
-                  db:   CONFIG['redis_index']) if CONFIG['use_redis']
-RKEY = 'aipdb'.freeze if CONFIG['use_redis']
+if CONFIG['use_redis']
+  require 'redis'
+  REDIS = Redis.new(host: CONFIG['redis_host'],
+                    port: CONFIG['redis_port'],
+                    db:   CONFIG['redis_index'])
+  RKEY = 'aipdb'.freeze
+end
 
 ## method to build curl object
 def build_curl(url)
@@ -40,58 +42,56 @@ def query_pdb(url)
   c.body_str
 end
 
-## method to get fqdn and ipaddr from node
-def get_facts(host)
-  fact = "/pdb/query/v4/nodes/#{host}/facts?query=" <<
-         CGI.escape('["or", ["=", "name", "ipaddress"],' \
-                    ' ["=", "name", "fqdn"]]')
-  JSON.parse(query_pdb(fact))
-end
-
-## method to pull the certname from the list of nodes
-## may be able to consolidate this w/an extract query when fetching the nodes
-def get_certname(nodes)
-  certnames = []
-  nodes.each do |h|
-    certnames.push(h['certname'].to_s)
+## method to rearrange facts returned from puppetdb
+## so that the key for 'value' is the fact name
+## instead of the literal string 'value' and
+## deletes the entry for 'name'
+def format_facts(array, factname)
+  array.each do |h|
+    h.store(factname, h.delete('value'))
+    h.delete('name')
   end
-  certnames
 end
 
-## build the contents for the meta section of the inventory
-## fqdn *should* always be first, and ipaddr second
-## we also set the host contents since we're already handling the data
-def get_node_info(nodes)
-  meta = {}
-  hosts = []
-  nodes.each do |node|
-    facts = []
-    get_facts(node).each { |x| facts.push(x) }
-    if !facts.to_a.empty?
-      meta[facts[0]['value']] = { 'ansible_host' => facts[1]['value'] }
-      hosts.push(facts[0]['value'])
+## method to merge arrays of hashes on a common field
+def merge_hasharray(array1, array2, commonfield)
+  merged_array = array1
+  xref = {}
+  array2.each { |hash| xref[hash[commonfield]] = hash }
+  merged_array.each do |hash|
+    oid = hash[commonfield]
+    hash2 = xref[oid]
+    next if hash2.empty?
+    hash2.each_pair do |kk, vv|
+      next if commonfield == kk
+      hash[kk] = vv
     end
-    ## 'hack' to get around doing proper threading/batching
-    ## curl gives errors w/out
-    sleep(0.1)
   end
-  [meta, hosts]
 end
 
 ## method to make a hacky json inventory for Ansible
-def hacky_json(mc, hc)
-  meta = { '_meta' => { 'hostvars' => mc } }
-  hosts = { 'all' => { 'hosts' => hc } }
+def hacky_json(nodes)
+  meta = {}
+  hosts = []
+  nodes.each do |node|
+    hosts.push(node['fqdn'])
+    meta[node['fqdn']] = { 'ansible_host' => node['ipaddress'] }
+  end
+  meta = { '_meta' => { 'hostvars' => meta } }
+  hosts = { 'all' => { 'hosts' => hosts } }
   JSON.generate(hosts.merge(meta))
 end
 
 ## method that binds everything
 def build_rsp
-  query = '/pdb/query/v4/nodes'
-  json_hosts = JSON.parse(query_pdb(query))
-  certnames = get_certname(json_hosts)
-  meta_contents, hosts_contents = get_node_info(certnames)
-  hacky_json(meta_contents, hosts_contents)
+  fqdn_query = '/pdb/query/v4/facts/fqdn'
+  json_hosts_fqdn = JSON.parse(query_pdb(fqdn_query))
+  format_facts(json_hosts_fqdn, 'fqdn')
+  ip_query = '/pdb/query/v4/facts/ipaddress'
+  json_hosts_ip = JSON.parse(query_pdb(ip_query))
+  format_facts(json_hosts_ip, 'ipaddress')
+  merged_facts = merge_hasharray(json_hosts_fqdn, json_hosts_ip, 'certname')
+  hacky_json(merged_facts)
 end
 
 ## handle options
