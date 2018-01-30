@@ -8,7 +8,7 @@ require 'curb'
 require 'cgi'
 
 ## load the config
-CONFIG = YAML.load_file(File.expand_path(File.dirname(__FILE__)) <<
+CONFIG = YAML.load_file(File.expand_path(__dir__) <<
                         '/config.yml')
 
 ## create the PuppetDB host string
@@ -55,14 +55,11 @@ end
 
 ## method to merge arrays of hashes on a common field
 def merge_hasharray(array1, array2, commonfield)
-  merged_array = array1
   xref = {}
   array2.each { |hash| xref[hash[commonfield]] = hash }
-  merged_array.each do |hash|
-    oid = hash[commonfield]
-    hash2 = xref[oid]
-    next if hash2.empty?
-    hash2.each_pair do |kk, vv|
+  array1.each do |hash|
+    next if xref[hash[commonfield]].empty?
+    xref[hash[commonfield]].each_pair do |kk, vv|
       next if commonfield == kk
       hash[kk] = vv
     end
