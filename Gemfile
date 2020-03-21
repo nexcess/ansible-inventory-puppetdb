@@ -5,7 +5,7 @@ gem 'redis'
 
 ## because fedora/rhel
 install_if -> { RUBY_PLATFORM =~ /linux/ } do
-  gem 'json'
+  gem 'json', '>= 2.3.0'
 end
 
 group :test do
