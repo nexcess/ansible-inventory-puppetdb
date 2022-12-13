@@ -8,8 +8,12 @@ require 'curb'
 require 'cgi'
 
 ## load the config
-CONFIG = YAML.load_file(File.expand_path(__dir__) <<
-                        '/config.yml')
+begin
+  CONFIG = YAML.load_file(File.expand_path(__dir__) << '/config.yml')
+rescue Errno::ENOENT
+  puts 'config.yml not found'
+  exit(1)
+end
 
 ## create the PuppetDB host string
 PROTO = CONFIG['ssl'] ? 'https://' : 'http://'
