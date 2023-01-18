@@ -4,7 +4,7 @@ This project is a PuppetDB-based dynamic inventory script for use with Ansible. 
 
 ## Requirements
 
-  * Ruby (only tested with 2.3.x)
+  * Ruby (only tested with 3.0.0)
   * 'bundler' Ruby gem
   * Accessable PuppetDB Server
   * Bash (optional - for wrapper script)
@@ -21,27 +21,31 @@ bundle install --path=vendor/
 
 The inventory script will look in the same directory as its self for a file named 'config.yml'.  This file accepts the options below in YAML format.
 
-#### `hostname`
+#### `puppetdb_servers`
+
+A hash with one entry per puppetdb server. Each entry can contain the following attributes:
+
+##### `hostname`
 
 The hostname of the PuppetDB server to use.
 
-#### `port`
+##### `port`
 
 The port of the PuppetDB server to use.
 
-#### `ssl`
+##### `ssl`
 
 Whether to use SSL for connecting to the PuppetDB server or not.  If enabled, you *must* also specify the cacert, cert, and key options.
 
-#### `cacert`
+##### `cacert`
 
 The CA certificate to use for SSL connections.
 
-#### `cert`
+##### `cert`
 
 The certificate on the node to use for authentication.
 
-#### `key`
+##### `key`
 
 The key file for the certificate used in authentication.
 
@@ -97,7 +101,7 @@ The script currently only returns one variable, `ansible_host`, which is set to 
 ## License and Copyright
 
 ~~~
-   Copyright 2016 Nexcess.net
+   Copyright 2023 Nexcess.net
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
