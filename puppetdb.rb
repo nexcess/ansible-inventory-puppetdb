@@ -4,130 +4,115 @@ require 'bundler/setup'
 require 'optparse'
 require 'json'
 require 'yaml'
-require 'curb'
+require 'net/http'
 require 'cgi'
 
-## load the config
-CONFIG = YAML.load_file(File.expand_path(__dir__) <<
-                        '/config.yml')
-
-## create the PuppetDB host string
-PROTO = CONFIG['ssl'] ? 'https://' : 'http://'
-PDBHOST = "#{PROTO}#{CONFIG['hostname']}:#{CONFIG['port']}".freeze
-
-## load redis and create connector if used
-if CONFIG['use_redis']
-  require 'redis'
-  REDIS = Redis.new(host: CONFIG['redis_host'],
-                    port: CONFIG['redis_port'],
-                    db:   CONFIG['redis_index'])
-  RKEY = 'aipdb'.freeze
-end
-
-## method to build curl object
-def build_curl(url)
-  Curl::Easy.new("#{PDBHOST}#{url}") do |curl|
-    if CONFIG['ssl']
-      curl.cacert = CONFIG['cacert'].to_s
-      curl.cert = CONFIG['cert'].to_s
-      curl.cert_key = CONFIG['key'].to_s
-    end
-  end
+def config
+  YAML.load_file(File.expand_path(__dir__) << '/config.yml')
+rescue Errno::ENOENT
+  puts 'config.yml not found'
+  exit(1)
 end
 
 ## method to query puppetdb
-def query_pdb(url)
-  c = build_curl(url)
-  c.perform
-  c.body_str
-end
+def query_pdb(host, path)
+  cache_filename = "#{host['hostname']}:#{host['port']}#{path}".gsub!('/', '')
 
-## method to rearrange facts returned from puppetdb
-## so that the key for 'value' is the fact name
-## instead of the literal string 'value' and
-## deletes the entry for 'name'
-def format_facts(array, factname)
-  array.each do |h|
-    h.store(factname, h.delete('value'))
-    h.delete('name')
-  end
-end
+  return File.read(cache_filename) if config['mode'] == 'development' && File.exist?(cache_filename)
 
-## method to merge arrays of hashes on a common field
-def merge_hasharray(array1, array2, commonfield)
-  xref = {}
-  array2.each { |hash| xref[hash[commonfield]] = hash }
-  array1.each do |hash|
-    next if xref[hash[commonfield]].empty?
-    xref[hash[commonfield]].each_pair do |kk, vv|
-      next if commonfield == kk
-      hash[kk] = vv
-    end
+  if host['ssl']
+    http_options = {
+      use_ssl: true,
+      verify_mode: OpenSSL::SSL::VERIFY_PEER,
+      keep_alive_timeout: 30,
+      cert: OpenSSL::X509::Certificate.new(File.read(host['cert'])),
+      key: OpenSSL::PKey::RSA.new(File.read(host['key']))
+    }
+  else
+    http_options = {
+      use_ssl: false,
+      keep_alive_timeout: 30
+    }
   end
-end
 
-## method to make a hacky json inventory for Ansible
-def hacky_json(nodes)
-  meta = {}
-  hosts = []
-  nodes.each do |node|
-    hosts.push(node['fqdn'])
-    meta[node['fqdn']] = { 'ansible_host' => node['ipaddress'] }
-  end
-  meta = { '_meta' => { 'hostvars' => meta } }
-  hosts = { 'all' => { 'hosts' => hosts } }
-  JSON.generate(hosts.merge(meta))
+  @http = Net::HTTP.start(host['hostname'], host['port'], http_options)
+  response = @http.request Net::HTTP::Get.new(path)
+
+  File.open(cache_filename, 'w') { |f| f.write(response.body) } if config['mode'] == 'development'
+
+  response.body
 end
 
 ## method that binds everything
-def build_rsp
-  fqdn_query = '/pdb/query/v4/facts/fqdn'
-  json_hosts_fqdn = JSON.parse(query_pdb(fqdn_query))
-  format_facts(json_hosts_fqdn, 'fqdn')
-  ip_query = '/pdb/query/v4/facts/ipaddress'
-  json_hosts_ip = JSON.parse(query_pdb(ip_query))
-  format_facts(json_hosts_ip, 'ipaddress')
-  merged_facts = merge_hasharray(json_hosts_fqdn, json_hosts_ip, 'certname')
-  hacky_json(merged_facts)
+def build_inventory
+  inventory = {
+    'all' => {
+      'hosts' => []
+    },
+    '_meta' => {
+      'hostvars' => {}
+    }
+  }
+
+  nodes = {}
+  config['puppetdb_servers'].each do |_index, host_info|
+    JSON.parse(query_pdb(host_info, '/pdb/query/v4/facts/fqdn')).each do |host|
+      nodes[host['certname']] = {}
+      nodes[host['certname']]['fqdn'] = host['value']
+    end
+    JSON.parse(query_pdb(host_info, '/pdb/query/v4/facts/ipaddress')).each do |host|
+      nodes[host['certname']]['ip'] = host['value']
+    end
+  end
+
+  nodes.each do |_index, node|
+    inventory['all']['hosts'].push(node['fqdn'])
+    inventory['_meta']['hostvars'][node['fqdn']] = { 'ipaddress' => node['ip'] }
+  end
+
+  JSON.generate(inventory)
 end
 
-## handle options
-options = {}
-OptionParser.new do |opts|
-  opts.banner = 'Usage: puppetdb.rb [options]'
-  opts.on('--list', 'List Hosts') do
-    options[:list] = true
+def main
+  ## load redis and create connector if used
+  if config['use_redis']
+    require 'redis'
+    redis = Redis.new(
+      host: config['redis_host'],
+      port: config['redis_port'],
+      db: config['redis_index']
+    )
+    rkey = 'aipdb'.freeze
   end
-  opts.on('--host', 'List Host Vars') do
-    options[:host] = true
-  end
-  opts.on('--clear', 'Clear Redis Cache') do
-    options[:clear] = true
-  end
-  opts.on('--build', 'Build Redis Cache') do
-    options[:build] = true
-  end
-end.parse!
 
-## handle switches
-if options[:list] || options.empty?
-  if CONFIG['use_redis']
-    REDIS.set(RKEY, build_rsp, ex: CONFIG['redis_ttl']) unless REDIS.get(RKEY)
-    puts REDIS.get(RKEY)
-  else
-    puts build_rsp
+  # handle options
+  options = {}
+  OptionParser.new do |opts|
+    opts.banner = 'Usage: puppetdb.rb [options]'
+    opts.on('--list', 'List Hosts') do
+      options[:list] = true
+    end
+    opts.on('--clear', 'Clear Redis Cache') do
+      options[:clear] = true
+    end
+    opts.on('--build', 'Build Redis Cache') do
+      options[:build] = true
+    end
+  end.parse!
+
+  # handle switches
+  if options[:list] || options.empty?
+    if config['use_redis']
+      redis.set(rkey, build_inventory, ex: config['redis_ttl']) unless redis.get(rkey)
+      puts redis.get(rkey)
+    else
+      puts build_inventory
+    end
   end
+
+  REDIS.del(rkey) if options[:clear] && config['use_redis']
+
+  REDIS.set(RKEY, build_inventory, ex: config['redis_ttl']) if options[:build] && config['use_redis']
 end
 
-if options[:host]
-  ## individual hostvars aren't currently supported
-  puts '{}'
-end
-
-if options[:clear]
-  REDIS.del(RKEY) if CONFIG['use_redis']
-end
-
-if options[:build]
-  REDIS.set(RKEY, build_rsp, ex: CONFIG['redis_ttl']) if CONFIG['use_redis']
-end
+main

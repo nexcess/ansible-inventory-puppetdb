@@ -1,24 +1,35 @@
 ## example configuration for the inventory
 ## copy this file as 'config.yml' and replace the values with your own
+---
+# (hash)
+# the list of puppetdb servers to query, must contain at least one entry
+puppetdb_servers:
+  server1:
+    hostname: yy-puppetdb02.us-midwest-1.nexcess.net
+    port: 8080
+    ssl: false
+    cacert: /path/to/ca/cert
+    cert: /path/to/server/cert
+    key: /path/to/server/key
 
-hostname: example.host ## (str) the hostname of the PuppetDB server to use
+# (bool) whether to use redis for caching
+use_redis: false
 
-port: 8080 ## (int) the port PuppetDB is listening on
+# (str) the host to use when connecting to redis
+redis_host: '127.0.0.1'
 
-ssl: false ## (bool) whether to use SSL/TLS for the connection (https)
+# (int) the port to use when connecting to redis
+redis_port: 6379
 
-cacert: /path/to/ca/cert   ## (str) path to the ca certificate
+# (int) the redis index to use for storage
+redis_index: 0
 
-cert: /path/to/server/cert ## (str) path to the servers certificate
+# (int) the time in seconds to consider cached data valid
+redis_ttl: 86400
 
-key: /path/to/server/key   ## (str) path to the servers certificate key
-
-use_redis: false ## (bool) whether to use redis for caching
-
-redis_host: '127.0.0.1' ## (str) the host to use when connecting to redis
-
-redis_port: 6379 ## (int) the port to use when connecting to redis
-
-redis_index: 0 ## (int) the redis index to use for storage
-
-redis_ttl: 86400 ## (int) the time in seconds to consider cached data valid
+# (str) the "mode" the script is in
+# 'development' mode = cache the results of http requests to puppetdb to a local
+#   file this is useful for development since you don't have to wait for
+#   the http requests every time
+# 'production' mode  = make fresh http requests to puppetdb every time
+mode: 'production'

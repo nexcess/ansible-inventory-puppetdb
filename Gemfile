@@ -1,6 +1,5 @@
 source 'https://rubygems.org'
 
-gem 'curb'
 gem 'redis'
 
 ## because fedora/rhel
