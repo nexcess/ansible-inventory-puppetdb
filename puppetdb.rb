@@ -4,7 +4,7 @@ require 'bundler/setup'
 require 'optparse'
 require 'json'
 require 'yaml'
-require 'curb'
+require 'net/http'
 require 'cgi'
 
 def config
@@ -16,24 +16,31 @@ end
 
 ## method to query puppetdb
 def query_pdb(host, path)
-  proto = host['ssl'] ? 'https://' : 'http://'
-  pdbhost = "#{proto}#{host['hostname']}:#{host['port']}".freeze
-  cache_filename = "#{pdbhost}#{path}".gsub!('/', '')
+  cache_filename = "#{host['hostname']}:#{host['port']}#{path}".gsub!('/', '')
 
   return File.read(cache_filename) if config['mode'] == 'development' && File.exist?(cache_filename)
 
-  c = Curl::Easy.new("#{pdbhost}#{path}") do |curl|
-    if host['ssl']
-      curl.cacert   = host['cacert'].to_s
-      curl.cert     = host['cert'].to_s
-      curl.cert_key = host['key'].to_s
-    end
+  if host['ssl']
+    http_options = {
+      use_ssl: true,
+      verify_mode: OpenSSL::SSL::VERIFY_PEER,
+      keep_alive_timeout: 30,
+      cert: OpenSSL::X509::Certificate.new(File.read(host['cert'])),
+      key: OpenSSL::PKey::RSA.new(File.read(host['key']))
+    }
+  else
+    http_options = {
+      use_ssl: false,
+      keep_alive_timeout: 30
+    }
   end
-  c.perform
 
-  File.open(cache_filename, 'w') { |f| f.write(c.body_str) } if config['mode'] == 'development'
+  @http = Net::HTTP.start(host['hostname'], host['port'], http_options)
+  response = @http.request Net::HTTP::Get.new(path)
 
-  c.body_str
+  File.open(cache_filename, 'w') { |f| f.write(response.body) } if config['mode'] == 'development'
+
+  response.body
 end
 
 ## method that binds everything
