@@ -110,9 +110,9 @@ def main
     end
   end
 
-  REDIS.del(rkey) if options[:clear] && config['use_redis']
+  redis.del(rkey) if options[:clear] && config['use_redis']
 
-  REDIS.set(RKEY, build_inventory, ex: config['redis_ttl']) if options[:build] && config['use_redis']
+  redis.set(rkey, build_inventory, ex: config['redis_ttl']) if options[:build] && config['use_redis']
 end
 
 main
