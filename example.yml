@@ -12,6 +12,22 @@ puppetdb_servers:
     cert: /path/to/server/cert
     key: /path/to/server/key
 
+# (list)
+# rules that set 'ansible_python_interpreter' on a host when its Puppet facts
+# match.  Each rule needs a 'path' (the interpreter to use) and a 'when' hash of
+# fact name => expected value.  Every fact in 'when' must match for the rule to
+# apply, and the first matching rule wins.  A value can also be a list, in which
+# case any one of them matching is enough.  Comparisons are case-insensitive.
+# Only the facts named here are queried from PuppetDB, so leave this out
+# entirely if you don't need it.
+python_interpreters:
+  # CentOS 6 has no python3, and its python2 lives at an unversioned path that
+  # Ansible's default interpreter discovery does not pick reliably
+  - path: /usr/bin/python2.7
+    when:
+      operatingsystem: CentOS
+      operatingsystemmajrelease: 6
+
 # (bool) whether to use redis for caching
 use_redis: false
 

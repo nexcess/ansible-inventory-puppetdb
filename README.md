@@ -51,6 +51,30 @@ The key file for the certificate used in authentication.
 
 The SSL connection is designed around the idea that the Puppet certificates will be used for authentication.  It may work with other certificate-based authentication, but that is currently untested/unplanned.
 
+#### `python_interpreters`
+
+An optional list of rules that set `ansible_python_interpreter` on a host when its Puppet facts match.  Each rule accepts the following attributes:
+
+##### `path`
+
+The interpreter path to use for hosts that match the rule.
+
+##### `when`
+
+A hash of fact name => expected value.  *Every* fact listed must match for the rule to apply.  A value may also be a list, in which case any one of them matching is enough.  Comparisons are case-insensitive, and numbers and strings are treated the same, so `6` and `'6'` both match a fact value of `"6"`.
+
+Rules are evaluated in order and the first match wins, so put the more specific rules first.  Only the facts named in `when` are queried from PuppetDB — each one costs an additional request per PuppetDB server — and hosts that match no rule get no `ansible_python_interpreter` at all, leaving Ansible's own interpreter discovery in charge.
+
+For example, to point CentOS 6 hosts at `/usr/bin/python2.7`:
+
+```yaml
+python_interpreters:
+  - path: /usr/bin/python2.7
+    when:
+      operatingsystem: CentOS
+      operatingsystemmajrelease: 6
+```
+
 There is an [example](example.yml) file included that covers each option, and the input that they accept.
 
 ## Usage
@@ -96,7 +120,9 @@ If Redis is used, there are a couple additional options the script can use:
 
 ## Variables
 
-The script currently only returns one variable, `ansible_host`, which is set to the IP address provided by the Puppet `ipaddress` core fact.  This is mainly to allow connection to hosts that do not have resolvable hostnames.  Other facts are not returned, and are not planned to be implemented.
+The script returns `ipaddress`, set to the IP address provided by the Puppet `ipaddress` core fact.  This is mainly to allow connection to hosts that do not have resolvable hostnames.
+
+It also returns `ansible_python_interpreter` on hosts matched by a [`python_interpreters`](#python_interpreters) rule.  Facts are only fetched from PuppetDB to evaluate those rules; they are not returned as host variables, and returning arbitrary facts is not planned.
 
 ## License and Copyright
 
