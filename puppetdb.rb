@@ -43,6 +43,33 @@ def query_pdb(host, path)
   response.body
 end
 
+## the python interpreter rules from the config, if any
+def interpreter_rules
+  config['python_interpreters'] || []
+end
+
+## the fact names referenced by the interpreter rules, so we only query what we need
+def interpreter_facts
+  interpreter_rules.flat_map { |rule| (rule['when'] || {}).keys }.uniq
+end
+
+## method to check a node's facts against a single rule's conditions
+## every condition must match, and a condition can be a single value or a list
+def facts_match?(facts, conditions)
+  conditions.all? do |fact_name, expected|
+    actual = facts[fact_name]
+    next false if actual.nil?
+
+    Array(expected).any? { |value| value.to_s.casecmp?(actual.to_s) }
+  end
+end
+
+## method to find the interpreter for a node, first matching rule wins
+def python_interpreter(facts)
+  rule = interpreter_rules.find { |r| facts_match?(facts, r['when'] || {}) }
+  rule && rule['path']
+end
+
 ## method that binds everything
 def build_inventory
   inventory = {
@@ -59,15 +86,26 @@ def build_inventory
     JSON.parse(query_pdb(host_info, '/pdb/query/v4/facts/fqdn')).each do |host|
       nodes[host['certname']] = {}
       nodes[host['certname']]['fqdn'] = host['value']
+      nodes[host['certname']]['facts'] = {}
     end
     JSON.parse(query_pdb(host_info, '/pdb/query/v4/facts/ipaddress')).each do |host|
       nodes[host['certname']]['ip'] = host['value']
+    end
+    interpreter_facts.each do |fact_name|
+      JSON.parse(query_pdb(host_info, "/pdb/query/v4/facts/#{CGI.escape(fact_name)}")).each do |host|
+        next unless nodes.key?(host['certname'])
+
+        nodes[host['certname']]['facts'][fact_name] = host['value']
+      end
     end
   end
 
   nodes.each do |_index, node|
     inventory['all']['hosts'].push(node['fqdn'])
-    inventory['_meta']['hostvars'][node['fqdn']] = { 'ipaddress' => node['ip'] }
+    hostvars = { 'ipaddress' => node['ip'] }
+    interpreter = python_interpreter(node['facts'])
+    hostvars['ansible_python_interpreter'] = interpreter if interpreter
+    inventory['_meta']['hostvars'][node['fqdn']] = hostvars
   end
 
   JSON.generate(inventory)
